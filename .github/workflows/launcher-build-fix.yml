@@ -1,0 +1,51 @@
+name: Build Samsung Launcher APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download project ZIP
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: /SamsungClassicLauncher.zip
+          sparse-checkout-cone-mode: false
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Extract project
+        run: unzip -q SamsungClassicLauncher.zip
+
+      - name: Set Java target to 17
+        run: |
+          cat > /tmp/jvm17.init.gradle <<'EOF'
+          allprojects {
+              tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+                  sourceCompatibility = "17"
+                  targetCompatibility = "17"
+              }
+          }
+          EOF
+
+      - name: Build APK
+        working-directory: SamsungClassicLauncher
+        run: gradle --no-daemon --init-script /tmp/jvm17.init.gradle assembleDebug
+
+      - name: Save APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SamsungClassicLauncher-APK
+          path: SamsungClassicLauncher/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
