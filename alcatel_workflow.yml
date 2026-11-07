@@ -1,0 +1,241 @@
+name: Build Alcatel 1052D Launcher
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-alcatel-1052d.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Generate Android project
+        run: |
+          mkdir -p RetroAlcatel/app/src/main/java/ru/danuul/alcatel
+          mkdir -p RetroAlcatel/app/src/main/res/drawable
+          # Original Alcatel 1052D product image; crop its display as a visual reference asset.
+          curl -fL --retry 3 \
+            "https://static-data.manualslib.tech/product-images/973/172779/alcatel-one-touch-1052d-cell-phone.jpg" \
+            -o /tmp/alcatel1052d.jpg
+          sudo apt-get update -qq && sudo apt-get install -y imagemagick
+          convert /tmp/alcatel1052d.jpg -crop 122x124+195+84 +repage \
+            -resize 600x610 RetroAlcatel/app/src/main/res/drawable/alcatel_standby_reference.jpg
+          cat > RetroAlcatel/settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "Alcatel1052D"
+          include(":app")
+          EOF
+          cat > RetroAlcatel/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF
+          echo 'android.useAndroidX=true' > RetroAlcatel/gradle.properties
+          cat > RetroAlcatel/app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "ru.danuul.alcatel"
+              compileSdk = 35
+              defaultConfig {
+                  applicationId = "ru.danuul.alcatel"
+                  minSdk = 23
+                  targetSdk = 28
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          EOF
+          cat > RetroAlcatel/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+              <application android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:label="Alcatel 1052D" android:allowBackup="false">
+                  <activity android:name=".MainActivity" android:screenOrientation="portrait"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                          <category android:name="android.intent.category.HOME"/>
+                          <category android:name="android.intent.category.DEFAULT"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > RetroAlcatel/app/src/main/java/ru/danuul/alcatel/MainActivity.kt <<'EOF'
+          package ru.danuul.alcatel
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.graphics.*
+          import android.view.*
+          import android.content.Intent
+          import android.media.AudioManager
+          import android.media.ToneGenerator
+          import android.provider.Settings
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : Activity() {
+              private lateinit var screen: PhoneScreen
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Color.BLACK
+                  window.navigationBarColor = Color.BLACK
+                  screen = PhoneScreen()
+                  setContentView(screen)
+              }
+              override fun onBackPressed() {
+                  if (screen.page != 0) { screen.page = 0; screen.invalidate() }
+                  else super.onBackPressed()
+              }
+
+              inner class PhoneScreen : View(this@MainActivity) {
+                  var page = 0
+                  private var selected = 0
+                  private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+                  private val beep = ToneGenerator(AudioManager.STREAM_SYSTEM, 45)
+                  private val labels = arrayOf(
+                      "Call", "Contacts", "Messages",
+                      "Camera", "Audio player", "FM radio",
+                      "Tools", "Settings", "Internet"
+                  )
+                  // Simple vector pictograms; replace with verified original icon artwork
+                  // when extracted from the model-specific manual/reference photos.
+                  private val glyphs = arrayOf("☎", "♟", "✉", "▣", "♫", "◉", "▦", "⚙", "◎")
+                  private val navy = Color.rgb(9, 25, 39)
+                  private val blue = Color.rgb(27, 91, 133)
+                  private val white = Color.WHITE
+
+                  override fun onDraw(c: Canvas) {
+                      super.onDraw(c)
+                      val w = width.toFloat()
+                      val h = height.toFloat()
+                      if (page == 0) drawStandby(c, w, h) else drawMenu(c, w, h)
+                  }
+
+                  private fun drawStandby(c: Canvas, w: Float, h: Float) {
+                      // Uses a crop of the actual Alcatel 1052D display from the model photo.
+                      val reference = android.graphics.BitmapFactory.decodeResource(
+                          resources, ru.danuul.alcatel.R.drawable.alcatel_standby_reference)
+                      if (reference != null) {
+                          val dst = RectF(0f, 0f, w, h)
+                          c.drawBitmap(reference, null, dst, p)
+                      } else {
+                          c.drawColor(Color.BLACK)
+                      }
+                      // The original screen photo itself carries the model's wallpaper and standby layout.
+                      // Softkey captions are redrawn at the bottom for touch interaction.
+                      softkeys(c,w,h,"Menu","Contacts")
+                  }
+
+                  private fun drawMenu(c: Canvas, w: Float, h: Float) {
+                      c.drawColor(Color.rgb(239,243,244))
+                      p.color = blue
+                      c.drawRect(0f,0f,w,42f,p)
+                      p.color = white
+                      p.textAlign = Paint.Align.CENTER
+                      p.textSize = 19f
+                      c.drawText("Menu",w/2f,29f,p)
+                      val cw=w/3f
+                      val ch=(h-95f)/3f
+                      for(i in labels.indices) {
+                          val x=(i%3+.5f)*cw
+                          val y=52f+(i/3+.5f)*ch
+                          if(i==selected) {
+                              p.color=blue
+                              c.drawRoundRect(x-cw*.44f,y-ch*.40f,x+cw*.44f,y+ch*.40f,4f,4f,p)
+                              p.color=white
+                          } else p.color=navy
+                          p.textAlign=Paint.Align.CENTER
+                          p.textSize=36f
+                          c.drawText(glyphs[i],x,y+8f,p)
+                          p.textSize=11f
+                          c.drawText(labels[i],x,y+ch*.28f,p)
+                      }
+                      softkeys(c,w,h,"Select","Back")
+                  }
+
+                  private fun softkeys(c:Canvas,w:Float,h:Float,left:String,right:String) {
+                      p.color=Color.BLACK
+                      c.drawRect(0f,h-36f,w,h,p)
+                      p.color=white
+                      p.textSize=14f
+                      p.textAlign=Paint.Align.LEFT
+                      c.drawText(left,14f,h-12f,p)
+                      p.textAlign=Paint.Align.RIGHT
+                      c.drawText(right,w-14f,h-12f,p)
+                  }
+
+                  override fun onTouchEvent(e:MotionEvent):Boolean {
+                      if(e.action!=MotionEvent.ACTION_UP) return true
+                      beep.startTone(ToneGenerator.TONE_PROP_BEEP,60)
+                      if(page==0) page=1
+                      else if(e.y>height-55f && e.x>width*.55f) page=0
+                      else if(e.y>height-55f) launchSelected()
+                      else {
+                          val ch=(height-95f)/3f
+                          val col=(e.x/(width/3f)).toInt().coerceIn(0,2)
+                          val row=((e.y-52f)/ch).toInt().coerceIn(0,2)
+                          selected=row*3+col
+                      }
+                      invalidate()
+                      return true
+                  }
+
+                  private fun launchSelected() {
+                      val intents=arrayOf(
+                          Intent(Intent.ACTION_DIAL),
+                          Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CONTACTS),
+                          Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MESSAGING),
+                          Intent("android.media.action.IMAGE_CAPTURE"),
+                          Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC),
+                          Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC),
+                          Intent(Intent.ACTION_GET_CONTENT).setType("*/*"),
+                          Intent(Settings.ACTION_SETTINGS),
+                          Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://www.google.com"))
+                      )
+                      try { startActivity(intents[selected]) } catch (_:Exception) {}
+                  }
+              }
+          }
+          EOF
+
+      - name: Install Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | head -n 1)"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Build APK
+        working-directory: RetroAlcatel
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alcatel-1052D-APK
+          path: RetroAlcatel/app/build/outputs/apk/debug/app-debug.apk
