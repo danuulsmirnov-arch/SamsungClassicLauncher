@@ -1,0 +1,303 @@
+name: Build Retro Alcatel APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-retro-alcatel-v2.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Create project
+        run: |
+          mkdir -p RetroAlcatel/app/src/main/java/ru/danuul/retroalcatel
+
+          cat > RetroAlcatel/settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "RetroAlcatel"
+          include(":app")
+          EOF
+
+          cat > RetroAlcatel/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF
+
+          cat > RetroAlcatel/gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          cat > RetroAlcatel/app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "ru.danuul.retroalcatel"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "ru.danuul.retroalcatel"
+                  minSdk = 23
+                  targetSdk = 28
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF
+
+          cat > RetroAlcatel/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+              <application
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:label="Retro Alcatel"
+                  android:allowBackup="false">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                          <category android:name="android.intent.category.HOME"/>
+                          <category android:name="android.intent.category.DEFAULT"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > RetroAlcatel/app/src/main/java/ru/danuul/retroalcatel/MainActivity.kt <<'EOF'
+          package ru.danuul.retroalcatel
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.graphics.*
+          import android.view.View
+          import android.view.MotionEvent
+          import android.content.Intent
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Color.BLACK
+                  window.navigationBarColor = Color.BLACK
+                  setContentView(RetroView())
+              }
+
+              inner class RetroView : View(this@MainActivity) {
+                  private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+                  private var page = 0
+                  private var selected = 0
+
+                  private val names = arrayOf(
+                      "Телефон", "Контакты", "Сообщения",
+                      "Камера", "Музыка", "Файлы",
+                      "Браузер", "Настройки", "Приложения"
+                  )
+
+                  private val icons = arrayOf(
+                      "☎", "♟", "✉", "▣", "♫", "▤", "◎", "⚙", "▦"
+                  )
+
+                  override fun onDraw(c: Canvas) {
+                      super.onDraw(c)
+                      val w = width.toFloat()
+                      val h = height.toFloat()
+                      c.drawColor(Color.rgb(8, 10, 13))
+
+                      if (page == 0) {
+                          drawSunset(c, w, h)
+
+                          p.shader = null
+                          p.color = Color.WHITE
+                          p.textAlign = Paint.Align.CENTER
+                          p.textSize = 52f
+                          c.drawText(
+                              SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                              w / 2f, h * 0.30f, p
+                          )
+
+                          p.textSize = 19f
+                          c.drawText(
+                              SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date()),
+                              w / 2f, h * 0.36f, p
+                          )
+
+                          p.textSize = 17f
+                          c.drawText("Нажми для меню", w / 2f, h * 0.90f, p)
+                      } else {
+                          p.color = Color.WHITE
+                          p.textAlign = Paint.Align.CENTER
+                          p.textSize = 23f
+                          c.drawText("МЕНЮ", w / 2f, 55f, p)
+
+                          for (i in 0..8) {
+                              val col = i % 3
+                              val row = i / 3
+                              val x = w * (col + 0.5f) / 3f
+                              val y = h * 0.25f + row * h * 0.21f
+
+                              p.color = if (i == selected) {
+                                  Color.rgb(190, 115, 40)
+                              } else {
+                                  Color.rgb(35, 39, 44)
+                              }
+                              c.drawRoundRect(
+                                  x - 42f, y - 42f, x + 42f, y + 42f,
+                                  12f, 12f, p
+                              )
+
+                              p.color = Color.WHITE
+                              p.textSize = 35f
+                              c.drawText(icons[i], x, y + 12f, p)
+
+                              p.textSize = 12f
+                              c.drawText(names[i], x, y + 62f, p)
+                          }
+                      }
+
+                      p.color = Color.WHITE
+                      p.textSize = 14f
+                      p.textAlign = Paint.Align.LEFT
+                      c.drawText(
+                          if (page == 0) "Меню" else "Выбрать",
+                          20f, h - 20f, p
+                      )
+                      p.textAlign = Paint.Align.RIGHT
+                      c.drawText("Назад", w - 20f, h - 20f, p)
+                  }
+
+                  private fun drawSunset(c: Canvas, w: Float, h: Float) {
+                      val top = h * 0.48f
+                      p.shader = LinearGradient(
+                          0f, top, 0f, h,
+                          Color.rgb(235, 105, 42),
+                          Color.rgb(12, 20, 29),
+                          Shader.TileMode.CLAMP
+                      )
+                      c.drawRect(0f, top, w, h, p)
+                      p.shader = null
+
+                      p.color = Color.rgb(255, 166, 62)
+                      c.drawCircle(w / 2f, top + 30f, 42f, p)
+
+                      p.color = Color.rgb(255, 190, 105)
+                      c.drawRect(w / 2f - 5f, top + 70f, w / 2f + 5f, h, p)
+
+                      p.color = Color.rgb(9, 14, 19)
+                      val path = Path()
+                      path.moveTo(0f, h * 0.72f)
+                      path.lineTo(w * 0.20f, h * 0.62f)
+                      path.lineTo(w * 0.34f, h * 0.70f)
+                      path.lineTo(w * 0.50f, h * 0.66f)
+                      path.lineTo(w * 0.70f, h * 0.74f)
+                      path.lineTo(w, h * 0.65f)
+                      path.lineTo(w, h)
+                      path.lineTo(0f, h)
+                      path.close()
+                      c.drawPath(path, p)
+                  }
+
+                  override fun onTouchEvent(e: MotionEvent): Boolean {
+                      if (e.action == MotionEvent.ACTION_UP) {
+                          if (page == 0) {
+                              page = 1
+                          } else {
+                              val col = (e.x / (width / 3f)).toInt().coerceIn(0, 2)
+                              val row = ((e.y - height * 0.25f) /
+                                  (height * 0.21f)).toInt().coerceIn(0, 2)
+                              selected = row * 3 + col
+
+                              val actions = arrayOf(
+                                  Intent(Intent.ACTION_DIAL),
+                                  Intent(Intent.ACTION_MAIN).addCategory(
+                                      Intent.CATEGORY_APP_CONTACTS
+                                  ),
+                                  Intent(Intent.ACTION_MAIN).addCategory(
+                                      Intent.CATEGORY_APP_MESSAGING
+                                  ),
+                                  Intent("android.media.action.IMAGE_CAPTURE"),
+                                  Intent(Intent.ACTION_MAIN).addCategory(
+                                      Intent.CATEGORY_APP_MUSIC
+                                  ),
+                                  Intent(Intent.ACTION_GET_CONTENT).setType("*/*"),
+                                  Intent(
+                                      Intent.ACTION_VIEW,
+                                      android.net.Uri.parse("https://www.google.com")
+                                  ),
+                                  Intent(android.provider.Settings.ACTION_SETTINGS)
+                              )
+
+                              if (selected < actions.size) {
+                                  try {
+                                      startActivity(actions[selected])
+                                  } catch (_: Exception) {
+                                  }
+                              }
+                          }
+                          invalidate()
+                      }
+                      return true
+                  }
+              }
+          }
+          EOF
+
+      - name: Install Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | head -n 1)"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Build APK
+        working-directory: RetroAlcatel
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroAlcatel-APK
+          path: RetroAlcatel/app/build/outputs/apk/debug/app-debug.apk
